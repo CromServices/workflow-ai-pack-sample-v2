@@ -1,5 +1,9 @@
 # A customer asks at 9pm
 
+Fictional business; not a paid engagement.
+
+The [northline-faq-handoff](northline-faq-handoff/) folder is a smaller, separate piece: six FAQ answers and a handoff to a person, with no order lookup or returns.
+
 Northline Supplies is an Australian shop that sells workshop consumables, fasteners, packaging, and PPE.
 
 Crom Services, Australia.
