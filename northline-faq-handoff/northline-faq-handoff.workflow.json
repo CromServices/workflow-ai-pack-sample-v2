@@ -1,0 +1,336 @@
+{
+  "name": "Northline Supplies FAQ enquiry with human handoff (sample)",
+  "nodes": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "name": "Enquiry webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "northline-faq-enquiry",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "name": "Normalise enquiry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Normalise the enquiry. Input: POST body { question, name?, email? }\nconst body = $json.body || $json;\nconst rawQuestion = String(body.question || body.message || '').trim();\nconst name = String(body.name || '').trim().slice(0, 80);\nconst email = String(body.email || '').trim().slice(0, 120);\n\n// Redact anything that looks like a card number or a pasted password/code\n// before the text goes into a handoff note.\nlet safe = rawQuestion;\nlet sensitive = false;\nsafe = safe.replace(/\\b\\d(?:[ -]?\\d){12,18}\\b/g, () => { sensitive = true; return '[removed card-like number]'; });\nsafe = safe.replace(/\\b(password|passcode|pin|otp|one[- ]time code)\\b\\s*(?:is|:|=)?\\s*\\S+/gi, (m, w) => { sensitive = true; return w + ' [removed]'; });\n\nconst text = ' ' + safe.toLowerCase()\n  .replace(/[\\u2018\\u2019]/g, \"'\")\n  .replace(/[^a-z0-9:$'\\- ]+/g, ' ')\n  .replace(/\\s+/g, ' ')\n  .trim() + ' ';\n\nreturn {\n  json: {\n    receivedAt: new Date().toISOString(),\n    question: safe.slice(0, 1000),\n    text,\n    name,\n    email,\n    hasReplyAddress: /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email),\n    sensitive,\n  },\n};"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "name": "FAQ knowledge source",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Small inline knowledge source for the fictional Northline Supplies.\n// Edit, add or remove entries here. Keep each answer to facts you have approved.\n// \"keywords\": a phrase scores 2 points, a single word scores 1 point.\nconst faq = [\n  {\n    id: 'hours',\n    topic: 'Desk hours',\n    keywords: ['opening hours', 'business hours', 'desk hours', 'what time', 'open', 'hours', 'closed', 'close'],\n    answer: 'The Northline Supplies support desk is open Monday to Friday, 8:00 am to 5:00 pm AEST. Messages sent after hours are picked up the next business morning.',\n  },\n  {\n    id: 'delivery-times',\n    topic: 'Delivery times',\n    keywords: ['how long', 'delivery time', 'delivery times', 'shipping time', 'how many days', 'business days', 'arrive', 'delivery', 'shipping'],\n    answer: 'Standard road delivery takes 2 to 4 business days to Sydney metro, 3 to 5 to other metro areas, 4 to 7 to regional areas and 7 to 12 to remote areas.',\n  },\n  {\n    id: 'cut-off',\n    topic: 'Order cut-off',\n    keywords: ['cut-off', 'cut off', 'cutoff', 'same day', 'same-day', 'ship today', 'dispatch today', 'order by', 'dispatched today'],\n    answer: 'Orders paid by 1:00 pm AEST ship the same business day when the items are in stock. Orders paid after that ship the next business day.',\n  },\n  {\n    id: 'free-shipping',\n    topic: 'Free shipping',\n    keywords: ['free shipping', 'free freight', 'free delivery', 'shipping cost', 'freight cost', 'delivery cost', 'how much is shipping', 'how much is delivery', 'freight', 'free'],\n    answer: 'Standard shipping is free on paid orders of A$150 or more excluding GST. Below that, shipping is quoted at checkout.',\n  },\n  {\n    id: 'returns',\n    topic: 'Returns window',\n    keywords: ['return policy', 'return window', 'send back', 'give back', 'return', 'returns', 'exchange', 'unopened'],\n    answer: 'Unused, unopened stock can be returned within 14 days of delivery. The buyer pays return freight unless we sent the wrong item. Opened, used or cut-to-length items, and PPE that has touched skin, cannot be returned.',\n  },\n  {\n    id: 'range',\n    topic: 'What we sell',\n    keywords: ['what do you sell', 'do you sell', 'do you stock', 'product range', 'products', 'range', 'sell', 'stock', 'fasteners', 'packaging', 'ppe'],\n    answer: 'Northline Supplies sells workshop consumables, fasteners, packaging and PPE to trade and small retail accounts.',\n  },\n];\n\nreturn {\n  json: {\n    ...$json,\n    faq,\n    // A match needs at least this many points and must beat the runner-up.\n    minScore: 2,\n    // Words that always go to a person, even if a FAQ entry also matches.\n    humanRequestPhrases: ['speak to a person', 'speak to someone', 'speak with a person', 'talk to a person', 'talk to someone', 'talk to a human', 'real person', 'human', 'call me', 'phone me', 'ring me', 'agent', 'someone call', 'representative', 'manager'],\n    handoffTopicPhrases: ['refund', 'chargeback', 'cancel', 'credit', 'damaged', 'crushed', 'broken', 'missing', 'wrong item', 'wrong sku', 'short shipped', 'where is my order', 'order status', 'track', 'tracking', 'change my address', 'change the address', 'new address', 'quote', 'discount', 'trade account', 'invoice', 'complaint', 'lawyer', 'legal', 'insurance', 'safe for', 'injury', 'allergic', 'on hold'],\n  },\n};"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "name": "Match question",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Decide: answer from the knowledge source, or hand off to a person.\nconst d = $json;\n// text is lower-case with single spaces and a space at each end.\nconst hasWord = (p) => d.text.includes(' ' + p + ' ');   // whole word or phrase\nconst hasStart = (p) => d.text.includes(' ' + p);        // word start: cancel matches cancelled\n\nlet reason = null;\nlet match = null;\nlet score = 0;\nlet runnerUp = 0;\n\nif (!d.question) {\n  reason = 'empty_question';\n} else if (d.sensitive) {\n  reason = 'sensitive_details_shared';\n} else if (d.humanRequestPhrases.some((p) => hasStart(p))) {\n  reason = 'customer_asked_for_a_person';\n} else if (/\\bnl-\\d{5}\\b/i.test(d.question) || d.handoffTopicPhrases.some((p) => hasStart(p))) {\n  reason = 'needs_a_person_to_action';\n} else {\n  const scored = d.faq.map((e) => {\n    let s = 0;\n    for (const k of e.keywords) {\n      if (hasWord(k)) s += k.includes(' ') ? 2 : 1;\n    }\n    return { e, s };\n  }).sort((a, b) => b.s - a.s);\n  score = scored[0].s;\n  runnerUp = scored[1].s;\n  if (score >= d.minScore && score > runnerUp) {\n    match = scored[0].e;\n  } else {\n    reason = score === 0 ? 'no_match_in_knowledge_source' : 'not_confident_enough';\n  }\n}\n\nconst { faq, humanRequestPhrases, handoffTopicPhrases, minScore, ...rest } = d;\nreturn {\n  json: {\n    ...rest,\n    confident: Boolean(match),\n    matchedId: match ? match.id : null,\n    matchedTopic: match ? match.topic : null,\n    answer: match ? match.answer : null,\n    score,\n    runnerUp,\n    handoffReason: reason,\n  },\n};"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "name": "Confident match?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        960,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "00000000-0000-4000-8000-000000000051",
+              "leftValue": "={{ $json.confident }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "name": "Reply with answer",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1220,
+        80
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'answered', topic: $json.matchedTopic, answer: $json.answer, source: 'Northline Supplies FAQ' } }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000007",
+      "name": "Write handoff note",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1220,
+        340
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Write the note the human sees. Customer text has card-like numbers and\n// pasted passwords removed already (see the Normalise node).\nconst d = $json;\nconst ref = 'ENQ-' + Date.now().toString(36).toUpperCase();\nconst lines = [\n  'FAQ desk handoff (' + ref + ')',\n  '',\n  'Why: ' + d.handoffReason,\n  'Received: ' + d.receivedAt,\n  'Customer name: ' + (d.name || '(not given)'),\n  'Reply address: ' + (d.hasReplyAddress ? d.email : '(not given)'),\n  '',\n  'Customer question, verbatim:',\n  d.question || '(empty)',\n  '',\n  'Note: no answer was given beyond \"a person will reply\". Nothing was promised (no refund, replacement or date).',\n];\nreturn {\n  json: {\n    ...d,\n    reference: ref,\n    handoffSubject: '[FAQ desk] ' + ref + ' - ' + d.handoffReason.replace(/_/g, ' '),\n    handoffText: lines.join('\\n'),\n  },\n};"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000008",
+      "name": "Send handoff email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1460,
+        340
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "fromEmail": "faq-desk@example.com",
+        "toEmail": "handoff@example.com",
+        "subject": "={{ $json.handoffSubject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.handoffText }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "SMTP account (choose your own)"
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000009",
+      "name": "Reply: a person will reply",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1720,
+        280
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'handed_off', message: 'Thanks for your question. A person at Northline Supplies will reply, Monday to Friday 8:00 am to 5:00 pm AEST.' + ($('Write handoff note').item.json.hasReplyAddress ? '' : ' Please send us an email address so we know where to reply.'), reference: $('Write handoff note').item.json.reference } }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000010",
+      "name": "Reply: handoff failed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1720,
+        460
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'handoff_failed', message: 'Sorry, we could not pass your question on just now. Please try again in a few minutes.' } }}",
+        "options": {
+          "responseCode": 503
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "name": "Note: How it works",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        -140
+      ],
+      "parameters": {
+        "content": "## How it works\nPOST {\"question\": \"...\", \"name\": \"...\", \"email\": \"...\"} to the webhook.\nA question that matches one FAQ entry is answered at once. Anything else goes to a person: no match, a refund or order problem, a pasted card or password, or a customer who asks for a human.",
+        "width": 480,
+        "height": 190,
+        "color": 4
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000012",
+      "name": "Note: Set up",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        700,
+        -140
+      ],
+      "parameters": {
+        "content": "## Set up\nEdit the six entries in FAQ knowledge source.\nChoose your own SMTP credential on Send handoff email and change the from and to addresses (example.com placeholders).",
+        "width": 460,
+        "height": 150,
+        "color": 5
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000013",
+      "name": "Note: Fictional business",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1220,
+        560
+      ],
+      "parameters": {
+        "content": "## Fictional business\nNorthline Supplies is a made-up shop. Sample policies only.",
+        "width": 320,
+        "height": 100,
+        "color": 3
+      }
+    }
+  ],
+  "connections": {
+    "Enquiry webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalise enquiry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalise enquiry": {
+      "main": [
+        [
+          {
+            "node": "FAQ knowledge source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FAQ knowledge source": {
+      "main": [
+        [
+          {
+            "node": "Match question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match question": {
+      "main": [
+        [
+          {
+            "node": "Confident match?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confident match?": {
+      "main": [
+        [
+          {
+            "node": "Reply with answer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Write handoff note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write handoff note": {
+      "main": [
+        [
+          {
+            "node": "Send handoff email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send handoff email": {
+      "main": [
+        [
+          {
+            "node": "Reply: a person will reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply: handoff failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}
